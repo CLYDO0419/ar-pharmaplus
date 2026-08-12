@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A&R PharmaPlus - POS</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase.js"></script>
+</head>
+<body>
+    <div class="fullscreen-overlay" id="unlockOverlay">
+        <div class="unlock-box">
+            <h2>🔒 Locked Mode</h2>
+            <p>Enter super admin password to unlock</p>
+            <input type="password" id="unlockPassword" placeholder="Super Admin Password">
+            <button onclick="unlockFullscreen()">Unlock</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <header>
+            <h1>A&R PHARMAPLUS</h1>
+            <div class="user-info">
+                <span id="currentUser">Guest</span>
+                <span class="online-badge" id="headerOnlineBadge"><span class="online-dot" id="headerOnlineDot"></span><span id="headerOnlineText">ONLINE</span></span>
+            </div>
+        </header>
+
+        <div class="navigation-bar" id="navigationBar" style="display: none;">
+            <div class="nav-left">
+                <button class="tab-btn active" onclick="showTab('pos')">POS</button>
+                <button class="tab-btn" onclick="showTab('inventory')">INVENTORY</button>
+                <button class="tab-btn" onclick="showTab('dataEntry')">DATA ENTRY</button>
+                <button class="tab-btn admin-only" onclick="showTab('reports')" style="display: none;">REPORTS</button>
+                <button class="tab-btn admin-only" onclick="showTab('users')" style="display: none;">USER MANAGEMENT</button>
+                <button class="tab-btn monitor-only" onclick="showTab('monitoring')" style="display: none;">📡 MONITORING</button>
+            </div>
+            <div class="nav-right">
+                <span class="conn-status-badge" id="connStatusBadge">
+                    <span class="conn-dot" id="connDot"></span>
+                    <span id="connText">ONLINE</span>
+                    <span id="pendingBadge" class="pending-badge" style="display:none;">0 pending</span>
+                </span>
+                <button onclick="toggleLockFullscreen()" class="nav-btn" id="lockBtn">
+                    <span id="lockIcon">🔓</span> LOCK SCREEN
+                </button>
+                <button onclick="logout()" class="nav-btn">LOGOUT</button>
+                <button onclick="showChangeUser()" class="nav-btn">CHANGE USER</button>
+            </div>
+        </div>
+
+        <div class="offline-banner" id="offlineBanner">
+            <span>⚠️ YOU ARE OFFLINE — Transactions are being saved locally</span>
+            <span class="sync-count" id="offlineSyncCount">0 pending</span>
+        </div>
+
+        <div class="login-screen" id="loginScreen">
+            <div class="login-box">
+                <h2>Login</h2>
+                <input type="text" id="loginUsername" placeholder="Username">
+                <input type="password" id="loginPassword" placeholder="Password">
+                <button onclick="login()" class="btn-primary">Login</button>
+            </div>
+        </div>
+
+        <div class="main-content" id="mainContent" style="display: none;">
+            <div id="posTab" class="tab-content active">
+                <div class="pos-layout">
+                    <!-- Column 1: Products -->
+                    <div class="pos-column pos-products">
+                        <div class="search-section">
+                            <input type="text" id="searchInput" placeholder="Search by name, barcode, price, or brand..." oninput="searchProducts()">
+                        </div>
+                        <div class="products-grid" id="productsGrid"></div>
+                    </div>
+                    
+                    <!-- Column 2: Cart -->
+                    <div class="pos-column pos-cart-column">
+                        <div class="barcode-scanner">
+                            <input type="text" id="barcodeInput" placeholder="Scan barcode here..." autofocus>
+                        </div>
+                        
+                        <div class="cart-section">
+                            <div class="cart-header">
+                                <h3>Cart</h3>
+                                <button onclick="voidTransaction()" class="btn-void" title="Clear entire cart">
+                                    🗑️ Void
+                                </button>
+                            </div>
+                            <div class="cart-items" id="cartItems"></div>
+                            <div class="cart-total">
+                                <strong>Total: ₱<span id="cartTotal">0.00</span></strong>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Column 3: Payment Calculator -->
+                    <div class="pos-column pos-payment-column">
+                        <div class="payment-calculator">
+                            <h4>Payment</h4>
+                            
+                            <!-- Payment Method Selector -->
+                            <div class="payment-method-selector">
+                                <button onclick="selectPaymentMethod('cash')" class="payment-method-btn active" id="cashMethodBtn">💵 Cash</button>
+                                <button onclick="selectPaymentMethod('ecash')" class="payment-method-btn" id="ecashMethodBtn">📱 E-Cash</button>
+                                <button onclick="selectPaymentMethod('card')" class="payment-method-btn" id="cardMethodBtn">💳 Card</button>
+                            </div>
+                            
+                            <div class="payment-display">
+                                <div class="payment-row">
+                                    <span>Total:</span>
+                                    <span class="payment-amount">₱<span id="paymentTotal">0.00</span></span>
+                                </div>
+                                <div class="payment-row" id="cashRow">
+                                    <span>Cash:</span>
+                                    <span class="payment-amount">₱<span id="cashAmount">0.00</span></span>
+                                </div>
+                                <div class="payment-row" id="ecashRow" style="display: none;">
+                                    <span>E-Cash Ref #:</span>
+                                    <span class="payment-amount">₱<span id="ecashAmount">0.00</span></span>
+                                </div>
+                                <div class="payment-row" id="cardRow" style="display: none;">
+                                    <span>Card:</span>
+                                    <span class="payment-amount">₱<span id="cardAmount">0.00</span></span>
+                                </div>
+                                <div class="payment-row change-row" id="changeRow">
+                                    <span>Change:</span>
+                                    <span class="payment-amount">₱<span id="changeAmount">0.00</span></span>
+                                </div>
+                            </div>
+                            <input type="text" id="customerNameInput" placeholder="Customer Name" style="display: none;">
+                            <input type="text" id="cashInput" placeholder="Enter amount" readonly>
+                            <div class="calc-buttons">
+                                <button onclick="cashInput('7')">7</button>
+                                <button onclick="cashInput('8')">8</button>
+                                <button onclick="cashInput('9')">9</button>
+                                <button onclick="cashInput('4')">4</button>
+                                <button onclick="cashInput('5')">5</button>
+                                <button onclick="cashInput('6')">6</button>
+                                <button onclick="cashInput('1')">1</button>
+                                <button onclick="cashInput('2')">2</button>
+                                <button onclick="cashInput('3')">3</button>
+                                <button onclick="cashInput('0')">0</button>
+                                <button onclick="cashInput('00')">00</button>
+                                <button onclick="cashInput('.')">.</button>
+                                <button onclick="cashClear()" class="calc-clear-btn">Clear</button>
+                            </div>
+                            <div class="quick-cash-buttons">
+                                <button onclick="quickCash(100)" class="quick-cash">₱100</button>
+                                <button onclick="quickCash(500)" class="quick-cash">₱500</button>
+                                <button onclick="quickCash(1000)" class="quick-cash">₱1000</button>
+                            </div>
+                        </div>
+                        
+                        <button onclick="checkout()" class="btn-checkout">Checkout</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="inventoryTab" class="tab-content">
+                <h2>Inventory</h2>
+                <div class="inventory-search">
+                    <input type="text" id="invSearchInput" placeholder="Search inventory..." oninput="filterInventory()">
+                </div>
+                <table class="inventory-table">
+                    <thead>
+                        <tr>
+                            <th>Barcode</th>
+                            <th>Name</th>
+                            <th>Brand</th>
+                            <th>Price (₱)</th>
+                            <th>Stock</th>
+                            <th class="superadmin-only" style="display: none;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="inventoryTableBody"></tbody>
+                </table>
+            </div>
+
+            <!-- Edit Product Modal -->
+            <div class="modal" id="editModal">
+                <div class="modal-content">
+                    <span class="close" onclick="closeEditModal()">&times;</span>
+                    <h2>Edit Product</h2>
+                    <form class="edit-form" onsubmit="saveProductEdit(event)">
+                        <input type="hidden" id="editOldBarcode">
+                        <label>Barcode:</label>
+                        <input type="text" id="editBarcode" required>
+                        <label>Product Name:</label>
+                        <input type="text" id="editName" required>
+                        <label>Brand:</label>
+                        <input type="text" id="editBrand" required>
+                        <label>Price (₱):</label>
+                        <input type="number" id="editPrice" step="0.01" required>
+                        <label>Stock Quantity:</label>
+                        <input type="number" id="editStock" required>
+                        <div class="modal-buttons">
+                            <button type="submit" class="btn-primary">Save Changes</button>
+                            <button type="button" class="btn-secondary" onclick="closeEditModal()">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Edit User Modal -->
+            <div class="modal" id="editUserModal">
+                <div class="modal-content">
+                    <span class="close" onclick="closeEditUserModal()">&times;</span>
+                    <h2>Edit User</h2>
+                    <form class="edit-form" onsubmit="saveUserEdit(event)">
+                        <input type="hidden" id="editUserOldUsername">
+                        <label>Username:</label>
+                        <input type="text" id="editUsername" required>
+                        <label>Password:</label>
+                        <input type="password" id="editUserPassword" required>
+                        <label>Role:</label>
+                        <select id="editUserRole" required>
+                            <option value="cashier">Cashier (POS Only)</option>
+                            <option value="admin">Admin (Inventory & Data Entry)</option>
+                            <option value="superadmin">Super Admin (Full Access)</option>
+                        </select>
+                        <div class="modal-buttons">
+                            <button type="submit" class="btn-primary">Save Changes</button>
+                            <button type="button" class="btn-secondary" onclick="closeEditUserModal()">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div id="dataEntryTab" class="tab-content">
+                <div class="data-entry-modes">
+                    <button class="mode-btn active" onclick="switchDataEntryMode('single')">Single Entry</button>
+                    <button class="mode-btn" onclick="switchDataEntryMode('bulk')">Bulk Import (Excel)</button>
+                </div>
+
+                <div id="singleEntryMode" class="entry-mode active">
+                    <h2>Add New Product</h2>
+                    <form class="data-entry-form" onsubmit="addProduct(event)">
+                        <input type="text" id="productBarcode" placeholder="Barcode" required>
+                        <input type="text" id="productName" placeholder="Product Name" required>
+                        <input type="text" id="productBrand" placeholder="Brand" required>
+                        <input type="number" id="productPrice" placeholder="Price (₱)" step="0.01" required>
+                        <input type="number" id="productStock" placeholder="Stock Quantity" required>
+                        <button type="submit" class="btn-primary">Add Product</button>
+                    </form>
+                </div>
+
+                <div id="bulkEntryMode" class="entry-mode">
+                    <h2>Bulk Import from Excel</h2>
+                    <div class="bulk-import-layout">
+                        <!-- Left Column: Instructions -->
+                        <div class="bulk-import-guide">
+                            <div class="import-instructions">
+                                <h3>📋 Instructions:</h3>
+                                <p>Upload an Excel file (.xlsx or .xls) with data in the following columns:</p>
+                                <ul>
+                                    <li><strong>Column A</strong> - Barcode (required)</li>
+                                    <li><strong>Column B</strong> - Product Name (required)</li>
+                                    <li><strong>Column C</strong> - Brand (required)</li>
+                                    <li><strong>Column D</strong> - Price in Philippine Peso (required)</li>
+                                    <li><strong>Column E</strong> - Stock Quantity (required)</li>
+                                </ul>
+                                <p class="note">Note: Data should start from row 1 (no header row needed)</p>
+                            </div>
+
+                            <div class="import-example">
+                                <h3>📊 Example Format:</h3>
+                                <table class="example-table">
+                                    <thead>
+                                        <tr>
+                                            <th>A</th>
+                                            <th>B</th>
+                                            <th>C</th>
+                                            <th>D</th>
+                                            <th>E</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td>011</td>
+                                            <td>Paracetamol 500mg</td>
+                                            <td>Biogesic</td>
+                                            <td>5.50</td>
+                                            <td>100</td>
+                                        </tr>
+                                        <tr>
+                                            <td>012</td>
+                                            <td>Amoxicillin 500mg</td>
+                                            <td>Amoxil</td>
+                                            <td>12.00</td>
+                                            <td>50</td>
+                                        </tr>
+                                        <tr>
+                                            <td>013</td>
+                                            <td>Ibuprofen 200mg</td>
+                                            <td>Advil</td>
+                                            <td>8.75</td>
+                                            <td>75</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Right Column: Upload & Preview -->
+                        <div class="bulk-import-action">
+                            <div class="file-upload-section">
+                                <input type="file" id="excelFileInput" accept=".xlsx,.xls" onchange="handleExcelFile(event)">
+                                <label for="excelFileInput" class="file-upload-label">
+                                    <span class="upload-icon">📁</span>
+                                    <span class="upload-text">Choose Excel File</span>
+                                </label>
+                                <div id="fileName" class="file-name"></div>
+                            </div>
+
+                            <div id="previewSection" class="preview-section" style="display: none;">
+                                <h3>Preview Data</h3>
+                                <div class="preview-stats">
+                                    <span id="previewCount">0 products ready to import</span>
+                                </div>
+                                <div class="preview-table-container">
+                                    <table class="preview-table" id="previewTable">
+                                        <thead>
+                                            <tr>
+                                                <th>Barcode</th>
+                                                <th>Name</th>
+                                                <th>Brand</th>
+                                                <th>Price (₱)</th>
+                                                <th>Stock</th>
+                                                <th>Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="previewTableBody"></tbody>
+                                    </table>
+                                </div>
+                                <div class="import-actions">
+                                    <button onclick="importProducts()" class="btn-primary btn-import">Import Products</button>
+                                    <button onclick="cancelImport()" class="btn-secondary">Cancel</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="reportsTab" class="tab-content">
+                <h2>Sales Reports</h2>
+                
+                <div class="report-filters">
+                    <div class="filter-group">
+                        <label>Report Type:</label>
+                        <select id="reportType" onchange="generateReport()">
+                            <option value="daily">Daily Sales</option>
+                            <option value="weekly">Weekly Sales</option>
+                            <option value="monthly">Monthly Sales</option>
+                            <option value="user">User Transactions</option>
+                            <option value="cash">Cash Transactions</option>
+                            <option value="ecash">E-Cash Transactions</option>
+                            <option value="card">Card Transactions</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group" id="userFilterGroup" style="display: none;">
+                        <label>Select User:</label>
+                        <select id="userFilter">
+                            <option value="all">All Users</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label>Date Range:</label>
+                        <input type="date" id="startDate">
+                        <span>to</span>
+                        <input type="date" id="endDate">
+                    </div>
+                    
+                    <button onclick="generateReport()" class="btn-primary">Generate Report</button>
+                    <button onclick="saveReport()" class="btn-save">💾 Save Report</button>
+                </div>
+
+                <div class="report-summary">
+                    <div class="summary-card">
+                        <h3>Total Sales</h3>
+                        <p class="summary-value" id="totalSales">₱0.00</p>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Total Transactions</h3>
+                        <p class="summary-value" id="totalTransactions">0</p>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Items Sold</h3>
+                        <p class="summary-value" id="totalItems">0</p>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Average Sale</h3>
+                        <p class="summary-value" id="avgSale">₱0.00</p>
+                    </div>
+                </div>
+
+                <div class="report-table-wrapper">
+                    <div class="report-table-container">
+                        <table class="report-table">
+                            <thead>
+                                <tr id="reportTableHeader">
+                                    <th>Date/Time</th>
+                                    <th>User</th>
+                                    <th>Customer</th>
+                                    <th>Items</th>
+                                    <th>Total</th>
+                                    <th>Payment</th>
+                                    <th>Change</th>
+                                </tr>
+                            </thead>
+                            <tbody id="reportTableBody">
+                                <tr>
+                                    <td colspan="7" style="text-align: center; padding: 40px; color: #7a7773;">
+                                        No transactions found. Select filters and click "Generate Report".
+                                    </td>
+                                </tr>
+                            </tbody>
+                            <tfoot id="reportTableFooter" style="display: none;">
+                                <tr class="report-total-row">
+                                    <td colspan="4" style="text-align: right; font-weight: bold;">TOTAL:</td>
+                                    <td id="footerTotal" style="font-weight: bold; color: #dc143c;">₱0.00</td>
+                                    <td id="footerPayment" style="font-weight: bold;">₱0.00</td>
+                                    <td id="footerChange" style="font-weight: bold;">₱0.00</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div id="usersTab" class="tab-content">
+                <h2>User Management</h2>
+                <form class="user-form" onsubmit="addUser(event)">
+                    <input type="text" id="newUsername" placeholder="Username" required>
+                    <input type="password" id="newPassword" placeholder="Password" required>
+                    <select id="newUserRole">
+                        <option value="cashier">Cashier (POS Only)</option>
+                        <option value="admin">Admin (Inventory & Data Entry)</option>
+                        <option value="superadmin">Super Admin (Full Access)</option>
+                    </select>
+                    <button type="submit" class="btn-primary">Add User</button>
+                </form>
+                <table class="users-table">
+                    <thead>
+                        <tr>
+                            <th>Username</th>
+                            <th>Role</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTableBody"></tbody>
+                </table>
+            </div>
+
+            <!-- Monitoring Tab -->
+            <div id="monitoringTab" class="tab-content">
+                <div class="monitor-header">
+                    <h2>📡 Live Monitoring Dashboard</h2>
+                    <div class="monitor-meta">
+                        <span class="conn-status-badge" id="monitorConnBadge">
+                            <span class="conn-dot" id="monitorConnDot"></span>
+                            <span id="monitorConnText">ONLINE</span>
+                        </span>
+                        <span id="monitorLastSync" class="monitor-sync-time">Last sync: —</span>
+                        <button onclick="refreshMonitoring()" class="btn-primary btn-monitor-refresh">🔄 Refresh</button>
+                    </div>
+                </div>
+
+                <!-- Summary Cards -->
+                <div class="monitor-summary">
+                    <div class="summary-card">
+                        <h3>Today's Sales</h3>
+                        <p class="summary-value" id="monTodaySales">₱0.00</p>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Today's Transactions</h3>
+                        <p class="summary-value" id="monTodayTxn">0</p>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Items Sold Today</h3>
+                        <p class="summary-value" id="monTodayItems">0</p>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Pending (Offline)</h3>
+                        <p class="summary-value" id="monPending">0</p>
+                    </div>
+                </div>
+
+                <!-- Active Sessions -->
+                <div class="monitor-section">
+                    <h3>👥 Cashier Status &amp; Sales</h3>
+                    <p class="monitor-note">Shows cashier accounts only. Admin and Super Admin are excluded. Online = currently logged in.</p>
+                    <table class="report-table" id="monitorSessionsTable">
+                        <thead>
+                            <tr>
+                                <th>Cashier</th>
+                                <th>Status</th>
+                                <th>Last Seen</th>
+                                <th>Today's Transactions</th>
+                                <th>Today's Sales</th>
+                                <th>Items Sold</th>
+                                <th>Cash</th>
+                                <th>E-Cash</th>
+                                <th>Card</th>
+                            </tr>
+                        </thead>
+                        <tbody id="monitorSessionsBody"></tbody>
+                    </table>
+                </div>
+
+                <!-- Per-Cashier Transaction Detail -->
+                <div class="monitor-section" id="cashierDetailSection" style="display:none;">
+                    <div class="cashier-detail-header">
+                        <h3 id="cashierDetailTitle">🧾 Transactions — </h3>
+                        <button onclick="closeCashierDetail()" class="btn-secondary btn-sm">✕ Close</button>
+                    </div>
+                    <div class="report-table-container">
+                        <table class="report-table">
+                            <thead>
+                                <tr>
+                                    <th>Date/Time</th>
+                                    <th>Items</th>
+                                    <th>Total</th>
+                                    <th>Payment</th>
+                                    <th>Change</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cashierDetailBody"></tbody>
+                        </table>
+                    </div>
+                    <div class="cashier-detail-footer">
+                        <span id="cashierDetailSummary"></span>
+                    </div>
+                </div>
+
+                <!-- Recent Transactions -->
+                <div class="monitor-section">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+                        <h3 style="margin:0;">🧾 All Transactions</h3>
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                            <select id="monTxnFilter" onchange="renderMonitorTransactions()" style="padding:6px 10px;border:2px solid #0a7c5c;border-radius:5px;font-size:13px;">
+                                <option value="all">All Cashiers</option>
+                            </select>
+                            <select id="monTxnDateFilter" onchange="renderMonitorTransactions()" style="padding:6px 10px;border:2px solid #0a7c5c;border-radius:5px;font-size:13px;">
+                                <option value="today">Today</option>
+                                <option value="week">This Week</option>
+                                <option value="all">All Time</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="report-table-container">
+                        <table class="report-table">
+                            <thead>
+                                <tr>
+                                    <th>Date/Time</th>
+                                    <th>Cashier</th>
+                                    <th>Items</th>
+                                    <th>Total</th>
+                                    <th>Payment</th>
+                                    <th>Change</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="monitorTxnBody"></tbody>
+                        </table>
+                    </div>
+                    <div class="monitor-txn-totals" id="monitorTxnTotals"></div>
+                </div>
+
+                <!-- Offline Queue -->
+                <div class="monitor-section" id="offlineQueueSection">
+                    <h3>⏳ Offline Queue <span id="offlineQueueCount" class="queue-count">0</span></h3>
+                    <p class="monitor-note">Transactions saved while offline — will sync automatically when connection is restored.</p>
+                    <div class="report-table-container">
+                        <table class="report-table">
+                            <thead>
+                                <tr>
+                                    <th>Queued At</th>
+                                    <th>Cashier</th>
+                                    <th>Items</th>
+                                    <th>Total</th>
+                                    <th>Payment</th>
+                                </tr>
+                            </thead>
+                            <tbody id="offlineQueueBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Delete Confirmation Modal -->
+        <div class="modal" id="deleteModal">
+            <div class="modal-content">
+                <h2>⚠️ Confirm Delete</h2>
+                <p id="deleteMessage"></p>
+                <p class="delete-instruction">Type <strong>Y</strong> or <strong>y</strong> to confirm deletion:</p>
+                <input type="text" id="deleteConfirmInput" maxlength="1" class="delete-input">
+                <div class="modal-buttons">
+                    <button class="btn-delete" onclick="confirmDelete()">Delete</button>
+                    <button class="btn-secondary" onclick="closeDeleteModal()">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Success/Alert Modal -->
+        <div class="modal" id="alertModal">
+            <div class="modal-content alert-modal">
+                <h2 id="alertTitle">Notice</h2>
+                <p id="alertMessage"></p>
+                <button class="btn-primary" onclick="closeAlertModal()">OK</button>
+            </div>
+        </div>
+
+        <!-- Checkout Modal -->
+        <div class="modal" id="checkoutModal">
+            <div class="modal-content receipt-modal">
+                <div class="receipt-header">
+                    <h2>A&R PHARMAPLUS</h2>
+                    <p class="receipt-subtitle">TRANSACTION RECEIPT</p>
+                </div>
+                <div class="receipt-body" id="checkoutMessage"></div>
+                <div class="receipt-footer">
+                    <button id="checkoutOkBtn" class="btn-primary btn-receipt-ok" onclick="closeCheckoutModal()">OK</button>
+                </div>
+            </div>
+        </div>
+
+        <footer class="bottom-banner">
+            <div class="banner-left">
+                <div class="banner-title">A&R PHARMAPLUS — WEB POS &nbsp;<span class="online-badge" id="footerOnlineBadge"><span class="online-dot" id="footerOnlineDot"></span><span id="footerOnlineText">ONLINE</span> &amp; MONITORING</span></div>
+                <div class="banner-credits">
+                    <span>BY: HIDDEN CLYDE ESPLIGUEZ</span>
+                    <span class="separator">|</span>
+                    <span>POWERED BY: KIRO</span>
+                </div>
+            </div>
+            <div class="banner-right">
+                <span id="currentDateTime"></span>
+            </div>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
